@@ -65,7 +65,7 @@ jobs:
           print("ZIP validado y extraído")
           PY
       - name: Verificar manifiesto e integridad
-        run: python scripts/check_release.py
+        run: PYTHONPATH=. python scripts/check_release.py
       - name: Preparar Python
         uses: actions/setup-python@v5
         with:
