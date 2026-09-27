@@ -1,0 +1,34 @@
+name: PlanillaPR360 — QA
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'PlanillaPR360_v1.1.zip'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirmar que existe el código
+        run: |
+          test -f app/main.py
+          test -f RELEASE_MANIFEST.json
+          test -f requirements.txt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Dependencias y pruebas
+        run: |
+          python -m pip install -r requirements.txt pytest
+          PYTHONPATH=. python scripts/check_release.py
+          PYTHONPATH=. python -m pytest -q
+          python -m compileall -q app scripts
+          node --check static/app.js
+          node --check static/service-worker.js
