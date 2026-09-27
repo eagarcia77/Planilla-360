@@ -26,12 +26,15 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import pathlib, zipfile, shutil, sys
+          import pathlib, zipfile, shutil, sys, hashlib
           archive=pathlib.Path("PlanillaPR360_v1.1.zip")
           if not archive.is_file():
               sys.exit("No se encontró PlanillaPR360_v1.1.zip")
           if archive.stat().st_size > 20_000_000:
               sys.exit("Archivo ZIP demasiado grande")
+          approved_sha256="5db101108711a0c754a7edb3dd1d1231715fb146542447d5b88428e3eae57bcf"
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!=approved_sha256:
+              sys.exit("La huella SHA-256 no coincide con el paquete v1.1 aprobado")
           with zipfile.ZipFile(archive) as z:
               members=z.infolist()
               if len(members)>300:
