@@ -1,0 +1,88 @@
+name: Importar PlanillaPR360 ZIP validado
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PlanillaPR360_v1.1.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: planilla-import-main
+  cancel-in-progress: false
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Verificar el archivo y extraer sin rutas inseguras
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, zipfile, shutil, sys
+          archive=pathlib.Path("PlanillaPR360_v1.1.zip")
+          if not archive.is_file():
+              sys.exit("No se encontró PlanillaPR360_v1.1.zip")
+          if archive.stat().st_size > 20_000_000:
+              sys.exit("Archivo ZIP demasiado grande")
+          with zipfile.ZipFile(archive) as z:
+              members=z.infolist()
+              if len(members)>300:
+                  sys.exit("Demasiados archivos")
+              if sum(x.file_size for x in members)>40_000_000:
+                  sys.exit("Contenido expandido demasiado grande")
+              names={m.filename for m in members}
+              required={"app/main.py","app/tax_engine.py","requirements.txt","RELEASE_MANIFEST.json","static/index.html","data/rules/2025.json","scripts/check_release.py"}
+              if not required.issubset(names):
+                  sys.exit("El archivo no contiene los componentes esperados: "+repr(required-names))
+              root=pathlib.Path.cwd().resolve()
+              for m in members:
+                  p=pathlib.PurePosixPath(m.filename)
+                  if (m.filename.startswith("/") or "\\" in m.filename or ".." in p.parts
+                      or not p.parts or m.is_dir() or p.parts[0]==".git"):
+                      if m.is_dir():
+                          continue
+                      sys.exit("Entrada insegura: "+m.filename)
+                  if p.parts[:2]==(".github","workflows"):
+                      # No sustituir workflows del repositorio desde un ZIP.
+                      continue
+                  mode=(m.external_attr>>16)&0o170000
+                  if mode==0o120000:
+                      sys.exit("Enlace simbólico no permitido")
+                  dest=(root/pathlib.Path(*p.parts)).resolve()
+                  if not dest.is_relative_to(root):
+                      sys.exit("Archivo fuera del repositorio")
+                  dest.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(m) as source, dest.open("wb") as target:
+                      shutil.copyfileobj(source,target)
+          print("ZIP validado y extraído")
+          PY
+      - name: Verificar manifiesto e integridad
+        run: python scripts/check_release.py
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Instalar dependencias y ejecutar pruebas
+        run: |
+          python -m pip install -r requirements.txt pytest
+          python -m pytest -q
+          python -m compileall -q app
+      - name: Publicar los archivos validados
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -- PlanillaPR360_v1.1.zip
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "release: importar PlanillaPR360 v1.1 verificado"
+            git push
+          fi
