@@ -42,6 +42,8 @@ jobs:
               if sum(x.file_size for x in members)>40_000_000:
                   sys.exit("Contenido expandido demasiado grande")
               names={m.filename for m in members}
+              if len(names)!=len(members):
+                  sys.exit("El ZIP contiene rutas duplicadas")
               required={"app/main.py","app/tax_engine.py","requirements.txt","RELEASE_MANIFEST.json","static/index.html","data/rules/2025.json","scripts/check_release.py"}
               if not required.issubset(names):
                   sys.exit("El archivo no contiene los componentes esperados: "+repr(required-names))
@@ -53,9 +55,11 @@ jobs:
                       if m.is_dir():
                           continue
                       sys.exit("Entrada insegura: "+m.filename)
-                  if p.parts[:2]==(".github","workflows"):
-                      # No sustituir workflows del repositorio desde un ZIP.
-                      continue
+                  if p.parts[:2]==(".github","workflows") and m.filename not in {
+                      ".github/workflows/tests.yml",
+                      ".github/workflows/hacienda-watch.yml",
+                  }:
+                      sys.exit("Workflow no autorizado dentro del ZIP: "+m.filename)
                   mode=(m.external_attr>>16)&0o170000
                   if mode==0o120000:
                       sys.exit("Enlace simbólico no permitido")
